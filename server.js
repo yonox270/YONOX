@@ -77,31 +77,32 @@ function verifyWebhook(req) {
   return hash === hmac;
 }
 
-app.post('/webhooks/customers/data_request', express.raw({type: 'application/json'}), (req, res) => {
-  if (verifyWebhook(req)) {
-    console.log('✅ Customer data request verified');
-    res.status(200).send();
-  } else {
-    res.status(401).send('Unauthorized');
+// Webhook GDPR unifié
+app.post('/webhooks', express.raw({type: 'application/json'}), (req, res) => {
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  const topic = req.get('X-Shopify-Topic');
+  const body = req.body;
+  
+  const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET)
+    .update(body, 'utf8')
+    .digest('base64');
+  
+  if (hash !== hmac) {
+    return res.status(401).send('Unauthorized');
   }
-});
-
-app.post('/webhooks/customers/redact', express.raw({type: 'application/json'}), (req, res) => {
-  if (verifyWebhook(req)) {
-    console.log('✅ Customer redact verified');
-    res.status(200).send();
-  } else {
-    res.status(401).send('Unauthorized');
+  
+  console.log(`✅ Webhook verified: ${topic}`);
+  
+  // Traiter selon le topic
+  if (topic === 'customers/data_request') {
+    console.log('Customer data request received');
+  } else if (topic === 'customers/redact') {
+    console.log('Customer redact received');
+  } else if (topic === 'shop/redact') {
+    console.log('Shop redact received');
   }
-});
-
-app.post('/webhooks/shop/redact', express.raw({type: 'application/json'}), (req, res) => {
-  if (verifyWebhook(req)) {
-    console.log('✅ Shop redact verified');
-    res.status(200).send();
-  } else {
-    res.status(401).send('Unauthorized');
-  }
+  
+  res.status(200).send();
 });
 
 app.listen(PORT, () => console.log('🚀 YONOX port ' + PORT));
