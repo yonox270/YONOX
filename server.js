@@ -204,4 +204,24 @@ app.get('/privacy', (req, res) => {
   `);
 });
 
+
+// WEBHOOKS GDPR OBLIGATOIRES
+app.post('/webhooks/customers/data_request', express.raw({type: 'application/json'}), (req, res) => {
+  console.log('Webhook: Customer data request received');
+  // Log la demande - tu devras fournir les données du client sur demande
+  res.status(200).send();
+});
+
+app.post('/webhooks/customers/redact', express.raw({type: 'application/json'}), (req, res) => {
+  console.log('Webhook: Customer redact received');
+  // Supprime les données du client de ta base de données
+  res.status(200).send();
+});
+
+app.post('/webhooks/shop/redact', express.raw({type: 'application/json'}), (req, res) => {
+  console.log('Webhook: Shop redact received');
+  // Supprime toutes les données de la boutique après 48h de désinstallation
+  res.status(200).send();
+});
+
 app.listen(PORT, () => console.log('🚀 YONOX sur port ' + PORT));
