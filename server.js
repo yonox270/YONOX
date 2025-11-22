@@ -1,16 +1,55 @@
 require('dotenv').config();
 const express = require('express');
+const session = require('express-session');
 const { scrapeProduct, downloadImage } = require('./scraper');
+const { Shopify } = require('@shopify/shopify-api');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use(express.static('public'));
+// Configuration Shopify
+Shopify.Context.initialize({
+  API_KEY: process.env.SHOPIFY_API_KEY,
+  API_SECRET_KEY: process.env.SHOPIFY_API_SECRET,
+  SCOPES: ['write_products', 'read_products'],
+  HOST_NAME: 'yonox.vercel.app',
+  IS_EMBEDDED_APP: false,
+  API_VERSION: '2024-10'
+});
 
+app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'yonox_secret_key',
+  resave: false,
+  saveUninitialized: false
+}));
+
+// Route OAuth - Installation
+app.get('/auth', async (req, res) => {
+  const shop = req.query.shop;
+  if (!shop) return res.status(400).send('Missing shop parameter');
+  
+  const authRoute = await Shopify.Auth.beginAuth(req, res, shop, '/auth/callback', false);
+  return res.redirect(authRoute);
+});
+
+// Route OAuth - Callback
+app.get('/auth/callback', async (req, res) => {
+  try {
+    const session = await Shopify.Auth.validateAuthCallback(req, res, req.query);
+    req.session.shopifySession = session;
+    res.redirect('/dashboard');
+  } catch (error) {
+    console.error('Auth error:', error);
+    res.status(500).send('Authentication failed');
+  }
+});
+
+// Homepage
 app.get('/', (req, res) => {
   res.send(`
-    <html>
+    <!DOCTYPE html>
+    <html lang="fr">
     <head>
       <meta charset="UTF-8">
       <title>YONOX</title>
@@ -43,9 +82,11 @@ app.get('/', (req, res) => {
   `);
 });
 
+// Dashboard
 app.get('/dashboard', (req, res) => {
   res.send(`
-    <html>
+    <!DOCTYPE html>
+    <html lang="fr">
     <head>
       <meta charset="UTF-8">
       <title>YONOX Dashboard</title>
@@ -105,6 +146,7 @@ app.get('/dashboard', (req, res) => {
   `);
 });
 
+// Import produit
 app.post('/import', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({error: 'URL manquante'});
@@ -117,110 +159,41 @@ app.post('/import', async (req, res) => {
   }
 });
 
+// Privacy Policy
 app.get('/privacy', (req, res) => {
   res.send(`
     <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>YONOX - Privacy Policy</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          max-width: 900px;
-          margin: 50px auto;
-          padding: 20px;
-          line-height: 1.6;
-          color: #333;
-        }
-        h1 { color: #667eea; margin-bottom: 30px; }
-        h2 { color: #764ba2; margin-top: 30px; margin-bottom: 15px; }
-        p { margin-bottom: 15px; }
-        .last-updated { color: #666; font-style: italic; margin-bottom: 30px; }
-      </style>
-    </head>
-    <body>
+    <html>
+    <head><title>YONOX Privacy Policy</title></head>
+    <body style="max-width:900px;margin:50px auto;padding:20px;font-family:Arial;">
       <h1>Privacy Policy - YONOX</h1>
-      <p class="last-updated">Last Updated: November 21, 2025</p>
-      
-      <h2>1. Introduction</h2>
-      <p>YONOX ("we", "our", or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, and safeguard your information when you use our Shopify application.</p>
-      
-      <h2>2. Information We Collect</h2>
-      <p>We collect the following types of information:</p>
-      <ul>
-        <li><strong>Store Information:</strong> Your Shopify store URL, store name, and contact email</li>
-        <li><strong>Product Data:</strong> Product information you choose to import through our app</li>
-        <li><strong>Usage Data:</strong> How you interact with our application</li>
-      </ul>
-      
-      <h2>3. How We Use Your Information</h2>
-      <p>We use the collected information to:</p>
-      <ul>
-        <li>Provide and maintain our service</li>
-        <li>Import products into your Shopify store</li>
-        <li>Improve and optimize our application</li>
-        <li>Communicate with you about updates and support</li>
-      </ul>
-      
-      <h2>4. Data Storage and Security</h2>
-      <p>We implement industry-standard security measures to protect your data. Your information is stored securely on Vercel's infrastructure and is encrypted in transit.</p>
-      
-      <h2>5. Data Sharing</h2>
-      <p>We do not sell, trade, or rent your personal information to third parties. We only share data with:</p>
-      <ul>
-        <li>Shopify (as required to provide our service)</li>
-        <li>Service providers who assist in operating our application</li>
-      </ul>
-      
-      <h2>6. Your Rights</h2>
-      <p>You have the right to:</p>
-      <ul>
-        <li>Access your personal data</li>
-        <li>Request correction of your data</li>
-        <li>Request deletion of your data</li>
-        <li>Uninstall the app at any time</li>
-      </ul>
-      
-      <h2>7. Data Retention</h2>
-      <p>We retain your data only as long as necessary to provide our services. When you uninstall the app, your data is deleted within 30 days.</p>
-      
-      <h2>8. Cookies</h2>
-      <p>We use essential cookies to maintain your session and ensure the app functions properly. We do not use tracking or advertising cookies.</p>
-      
-      <h2>9. Changes to This Policy</h2>
-      <p>We may update this Privacy Policy from time to time. We will notify you of any changes by updating the "Last Updated" date.</p>
-      
-      <h2>10. Contact Us</h2>
-      <p>If you have questions about this Privacy Policy, please contact us at:</p>
+      <p>Last Updated: November 21, 2025</p>
+      <h2>1. Information We Collect</h2>
+      <p>We collect store URL, contact email, and product data you choose to import.</p>
+      <h2>2. How We Use Your Information</h2>
+      <p>We use data to provide our service and import products into your Shopify store.</p>
+      <h2>3. Data Security</h2>
+      <p>Your data is encrypted and stored securely on Vercel infrastructure.</p>
+      <h2>4. Contact</h2>
       <p>Email: support@yonox.app</p>
-      
-      <p style="margin-top: 50px; padding-top: 20px; border-top: 1px solid #ddd; color: #666;">
-        © 2025 YONOX. All rights reserved.
-      </p>
     </body>
     </html>
   `);
 });
 
-
-// WEBHOOKS GDPR OBLIGATOIRES
+// Webhooks GDPR
 app.post('/webhooks/customers/data_request', express.raw({type: 'application/json'}), (req, res) => {
-  console.log('Webhook: Customer data request received');
-  // Log la demande - tu devras fournir les données du client sur demande
+  console.log('Customer data request');
   res.status(200).send();
 });
 
 app.post('/webhooks/customers/redact', express.raw({type: 'application/json'}), (req, res) => {
-  console.log('Webhook: Customer redact received');
-  // Supprime les données du client de ta base de données
+  console.log('Customer redact');
   res.status(200).send();
 });
 
 app.post('/webhooks/shop/redact', express.raw({type: 'application/json'}), (req, res) => {
-  console.log('Webhook: Shop redact received');
-  // Supprime toutes les données de la boutique après 48h de désinstallation
+  console.log('Shop redact');
   res.status(200).send();
 });
 
