@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
+const querystring = require('querystring');
 const { scrapeProduct } = require('./scraper');
 
 const app = express();
@@ -9,35 +10,36 @@ const PORT = process.env.PORT || 3000;
 const SHOPIFY_API_KEY = process.env.SHOPIFY_API_KEY || '04440ad02feba547ef4446437d11b2d2';
 const SHOPIFY_API_SECRET = process.env.SHOPIFY_API_SECRET || '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';
 const SCOPES = 'write_products,read_products';
-const HOST = 'https://yonox.vercel.app';
+const HOST = process.env.HOST || 'https://yonox.vercel.app';
 
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// OAuth - Installation
+// OAuth - Installation (ÉTAPE 1)
 app.get('/auth', (req, res) => {
   const shop = req.query.shop;
-  if (!shop) return res.status(400).send('Missing shop');
+  if (!shop) return res.status(400).send('Missing shop parameter');
   
-  const nonce = crypto.randomBytes(16).toString('hex');
+  const state = crypto.randomBytes(16).toString('hex');
   const redirectUri = `${HOST}/auth/callback`;
   
-  const authUrl = `https://${shop}/admin/oauth/authorize?client_id=${SHOPIFY_API_KEY}&scope=${SCOPES}&redirect_uri=${redirectUri}&state=${nonce}`;
+  const installUrl = `https://${shop}/admin/oauth/authorize?` + querystring.stringify({
+    client_id: SHOPIFY_API_KEY,
+    scope: SCOPES,
+    state: state,
+    redirect_uri: redirectUri
+  });
   
-  res.redirect(authUrl);
+  res.redirect(installUrl);
 });
 
-// OAuth - Callback
+// OAuth - Callback (ÉTAPE 2 - REDIRECTION IMMÉDIATE VERS L'APP)
 app.get('/auth/callback', (req, res) => {
-  const shop = req.query.shop;
-  const host = req.query.host;
+  const { shop, code, state } = req.query;
   
-  // Redirection immédiate vers l'interface de l'app (OBLIGATOIRE pour Shopify)
-  if (host) {
-    res.redirect(`https://${shop}/admin/apps/${SHOPIFY_API_KEY}`);
-  } else {
-    res.redirect('/dashboard');
-  }
+  // CRITICAL: Redirection IMMÉDIATE vers l'interface de l'app
+  res.redirect(`/dashboard?shop=${shop}`);
 });
 
 // Homepage
@@ -62,7 +64,7 @@ app.get('/dashboard', (req, res) => {
   `);
 });
 
-// Import
+// Import produit
 app.post('/import', async (req, res) => {
   try {
     const product = await scrapeProduct(req.body.url || 'https://example.com');
@@ -72,44 +74,43 @@ app.post('/import', async (req, res) => {
   }
 });
 
-// Privacy
+// Privacy Policy
 app.get('/privacy', (req, res) => {
   res.send('<html><head><title>YONOX Privacy</title></head><body style="max-width:900px;margin:50px auto;padding:20px;font-family:Arial"><h1>Privacy Policy - YONOX</h1><p>Last Updated: November 21, 2025</p><h2>Information We Collect</h2><p>We collect store URL, email, and product data.</p><h2>Contact</h2><p>support@yonox.app</p></body></html>');
 });
 
-// Webhooks GDPR - VALIDATION HMAC
-function verifyWebhook(req) {
-  const hmac = req.get('X-Shopify-Hmac-Sha256');
-  const body = req.body;
-  const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(body, 'utf8').digest('base64');
-  return hash === hmac;
-}
-
-// Webhooks GDPR - HMAC validation
-function verifyWebhook(req) {
-  const hmac = req.get('X-Shopify-Hmac-Sha256');
-  const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET)
-    .update(req.body, 'utf8')
-    .digest('base64');
-  return hash === hmac;
-}
-
+// Webhooks GDPR avec HMAC validation (CRITIQUE)
 app.post('/webhooks/customers/data_request', express.raw({type: 'application/json'}), (req, res) => {
-  if (!verifyWebhook(req)) return res.status(401).send('Unauthorized');
-  console.log('✅ Customer data request');
-  res.status(200).send();
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(req.body, 'utf8').digest('base64');
+  
+  if (hash === hmac) {
+    console.log('✅ Customer data request verified');
+    return res.status(200).send();
+  }
+  res.status(401).send('Unauthorized');
 });
 
 app.post('/webhooks/customers/redact', express.raw({type: 'application/json'}), (req, res) => {
-  if (!verifyWebhook(req)) return res.status(401).send('Unauthorized');
-  console.log('✅ Customer redact');
-  res.status(200).send();
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(req.body, 'utf8').digest('base64');
+  
+  if (hash === hmac) {
+    console.log('✅ Customer redact verified');
+    return res.status(200).send();
+  }
+  res.status(401).send('Unauthorized');
 });
 
 app.post('/webhooks/shop/redact', express.raw({type: 'application/json'}), (req, res) => {
-  if (!verifyWebhook(req)) return res.status(401).send('Unauthorized');
-  console.log('✅ Shop redact');
-  res.status(200).send();
+  const hmac = req.get('X-Shopify-Hmac-Sha256');
+  const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET).update(req.body, 'utf8').digest('base64');
+  
+  if (hash === hmac) {
+    console.log('✅ Shop redact verified');
+    return res.status(200).send();
+  }
+  res.status(401).send('Unauthorized');
 });
 
 app.listen(PORT, () => console.log('🚀 YONOX port ' + PORT));
