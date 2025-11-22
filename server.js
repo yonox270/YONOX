@@ -29,7 +29,15 @@ app.get('/auth', (req, res) => {
 
 // OAuth - Callback
 app.get('/auth/callback', (req, res) => {
-  res.redirect('/dashboard');
+  const shop = req.query.shop;
+  const host = req.query.host;
+  
+  // Redirection immédiate vers l'interface de l'app (OBLIGATOIRE pour Shopify)
+  if (host) {
+    res.redirect(`https://${shop}/admin/apps/${SHOPIFY_API_KEY}`);
+  } else {
+    res.redirect('/dashboard');
+  }
 });
 
 // Homepage
@@ -77,31 +85,30 @@ function verifyWebhook(req) {
   return hash === hmac;
 }
 
-// Webhook GDPR unifié
-app.post('/webhooks', express.raw({type: 'application/json'}), (req, res) => {
+// Webhooks GDPR - HMAC validation
+function verifyWebhook(req) {
   const hmac = req.get('X-Shopify-Hmac-Sha256');
-  const topic = req.get('X-Shopify-Topic');
-  const body = req.body;
-  
   const hash = crypto.createHmac('sha256', SHOPIFY_API_SECRET)
-    .update(body, 'utf8')
+    .update(req.body, 'utf8')
     .digest('base64');
-  
-  if (hash !== hmac) {
-    return res.status(401).send('Unauthorized');
-  }
-  
-  console.log(`✅ Webhook verified: ${topic}`);
-  
-  // Traiter selon le topic
-  if (topic === 'customers/data_request') {
-    console.log('Customer data request received');
-  } else if (topic === 'customers/redact') {
-    console.log('Customer redact received');
-  } else if (topic === 'shop/redact') {
-    console.log('Shop redact received');
-  }
-  
+  return hash === hmac;
+}
+
+app.post('/webhooks/customers/data_request', express.raw({type: 'application/json'}), (req, res) => {
+  if (!verifyWebhook(req)) return res.status(401).send('Unauthorized');
+  console.log('✅ Customer data request');
+  res.status(200).send();
+});
+
+app.post('/webhooks/customers/redact', express.raw({type: 'application/json'}), (req, res) => {
+  if (!verifyWebhook(req)) return res.status(401).send('Unauthorized');
+  console.log('✅ Customer redact');
+  res.status(200).send();
+});
+
+app.post('/webhooks/shop/redact', express.raw({type: 'application/json'}), (req, res) => {
+  if (!verifyWebhook(req)) return res.status(401).send('Unauthorized');
+  console.log('✅ Shop redact');
   res.status(200).send();
 });
 
